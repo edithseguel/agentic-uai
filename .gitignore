@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.langgraph_api/
+.pytest_cache/
+.DS_Store
+data/
+local_data/
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.jsonl
+*.parquet
