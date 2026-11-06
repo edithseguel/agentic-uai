@@ -5,7 +5,9 @@ import os
 from typing import Any, Literal
 
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI, HTTPException, status
+import httpx
+from fastapi import Body, FastAPI, Header, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.router.graph import graph as router_graph
@@ -130,6 +132,49 @@ def chat(payload: ChatRequest) -> ChatResponse:
 
 
 @app.post("/telegram", include_in_schema=False, tags=["telegram"])
-def telegram(_: Any = Body(...)) -> dict[str, bool]:
-    """Placeholder del webhook de Telegram."""
+async def telegram(
+    update: dict[str, Any] = Body(...),
+    telegram_secret: str | None = Header(
+        default=None, alias="X-Telegram-Bot-Api-Secret-Token"
+    ),
+) -> dict[str, bool]:
+    """Procesa un mensaje Telegram y contesta sin exponer errores internos."""
+    secret_esperado = os.getenv("TELEGRAM_SECRET")
+    if not secret_esperado or telegram_secret != secret_esperado:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Webhook no autorizado.")
+
+    message = update.get("message")
+    if not isinstance(message, dict) or not isinstance(message.get("text"), str):
+        return {"ok": True}
+
+    chat = message.get("chat")
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    texto = message["text"].strip()
+    if chat_id is None or not texto:
+        return {"ok": True}
+
+    try:
+        state = await run_in_threadpool(
+            router_graph.invoke,
+            {"mensaje": texto},
+            {"configurable": {"thread_id": str(chat_id)}},
+        )
+        token = os.getenv("TELEGRAM_TOKEN")
+        if not token:
+            raise RuntimeError("TELEGRAM_TOKEN no está configurado")
+
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": state["respuesta"]},
+            )
+            if response.is_error:
+                logger.error("Telegram sendMessage respondió con estado %s", response.status_code)
+                return {"ok": True}
+        logger.info("Telegram: chat %s enrutado a %s", chat_id, state["ruta"])
+    except httpx.HTTPError as error:
+        logger.error("Error HTTP enviando respuesta a Telegram: %s", type(error).__name__)
+    except Exception:
+        logger.exception("Error al procesar el webhook de Telegram para chat %s", chat_id)
+
     return {"ok": True}
