@@ -25,6 +25,30 @@ cp .env.example .env
 Edita `.env` localmente y completa al menos `GOOGLE_API_KEY`. No subas ese
 archivo al repositorio.
 
+## Clave de la API
+
+`POST /chat` exige la cabecera `X-API-Key`. Genera una clave segura:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+En local, guarda el resultado en `.env`:
+
+```dotenv
+API_KEY=pega-aqui-tu-clave-generada
+```
+
+En Heroku, guárdala como Config Var (nunca la incluyas en Git):
+
+```bash
+heroku config:set API_KEY='PEGA_AQUI_TU_CLAVE_GENERADA' --app TU_APP_HEROKU
+```
+
+En Swagger, abre [http://localhost:8000/docs](http://localhost:8000/docs),
+pulsa **Authorize**, introduce la clave en `APIKeyHeader` y luego usa
+**Try it out** en `/chat`.
+
 ## Ejecutar el router localmente
 
 Con el entorno activado, ejecuta un mensaje y muestra los saltos del grafo:
@@ -59,6 +83,7 @@ Ejemplo para `/chat`:
 ```bash
 curl -X POST http://localhost:8000/chat \
   -H 'Content-Type: application/json' \
+  -H 'X-API-Key: TU_CLAVE_DE_API' \
   -d '{"user_id":"cliente-123","texto":"¿tienen la polera azul en talla M?"}'
 ```
 
@@ -173,6 +198,7 @@ Usa la URL HTTPS resultante como `PUBLIC_URL` en tu `.env` y ejecuta
 | Variable | Uso |
 | --- | --- |
 | `GOOGLE_API_KEY` | Credencial para invocar Gemini. |
+| `API_KEY` | Clave necesaria en la cabecera `X-API-Key` de `POST /chat`. |
 | `MODELO` | Modelo Gemini usado por el router. |
 | `TELEGRAM_TOKEN` | Token de BotFather usado para enviar respuestas con `sendMessage`. |
 | `TELEGRAM_SECRET` | Secreto que Telegram envía en cada webhook para validarlo. |

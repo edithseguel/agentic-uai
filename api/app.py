@@ -2,12 +2,14 @@
 
 import logging
 import os
+import secrets
 from typing import Any, Literal
 
 from dotenv import load_dotenv
 import httpx
-from fastapi import Body, FastAPI, Header, HTTPException, status
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Security, status
 from fastapi.concurrency import run_in_threadpool
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.router.graph import graph as router_graph
@@ -15,6 +17,7 @@ from src.router.graph import graph as router_graph
 load_dotenv()
 logger = logging.getLogger(__name__)
 MODELO = os.getenv("MODELO", "gemini-3.5-flash-lite")
+api_key_header = APIKeyHeader(name="X-API-Key", scheme_name="APIKeyHeader", auto_error=False)
 
 tags_metadata = [
     {"name": "salud", "description": "Estado del servicio y modelo configurado."},
@@ -93,6 +96,16 @@ class ErrorResponse(BaseModel):
     )
 
 
+def verificar_api_key(api_key: str | None = Security(api_key_header)) -> None:
+    """Autoriza el acceso a /chat mediante una clave configurada en el entorno."""
+    clave_esperada = os.getenv("API_KEY")
+    if not clave_esperada or api_key is None or not secrets.compare_digest(api_key, clave_esperada):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Se requiere una X-API-Key válida para usar el chat.",
+        )
+
+
 @app.get("/health", response_model=HealthResponse, tags=["salud"], summary="Comprobar la API")
 def health() -> HealthResponse:
     """Devuelve el estado de la API y el modelo configurado."""
@@ -106,6 +119,10 @@ def health() -> HealthResponse:
     summary="Enrutar un mensaje de ecommerce",
     responses={
         200: {"description": "Mensaje enrutado correctamente."},
+        401: {
+            "model": ErrorResponse,
+            "description": "Falta la clave de API o no es válida.",
+        },
         422: {"description": "El cuerpo no cumple el formato requerido."},
         502: {
             "model": ErrorResponse,
@@ -113,7 +130,7 @@ def health() -> HealthResponse:
         },
     },
 )
-def chat(payload: ChatRequest) -> ChatResponse:
+def chat(payload: ChatRequest, _: None = Depends(verificar_api_key)) -> ChatResponse:
     """Ejecuta el grafo del router reutilizando memoria por usuario."""
     try:
         state = router_graph.invoke(

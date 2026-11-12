@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from api.app import app
 
 
-def test_chat_retorna_la_decision_del_router(monkeypatch) -> None:
+def test_chat_con_clave_valida_retorna_la_decision_del_router(monkeypatch) -> None:
     def invoke(_: dict, config: dict) -> dict:
         assert config["configurable"]["thread_id"] == "cliente-123"
         return {
@@ -12,18 +12,32 @@ def test_chat_retorna_la_decision_del_router(monkeypatch) -> None:
             "respuesta": "Soy el agente de preventa.",
         }
 
+    monkeypatch.setenv("API_KEY", "clave-de-prueba")
     monkeypatch.setattr("api.app.router_graph.invoke", invoke)
     response = TestClient(app).post(
         "/chat",
         json={"user_id": "cliente-123", "texto": "¿Tienen talla M?"},
+        headers={"X-API-Key": "clave-de-prueba"},
     )
 
     assert response.status_code == 200
     assert response.json()["ruta"] == "preventa"
 
 
-def test_chat_sin_texto_devuelve_422() -> None:
-    response = TestClient(app).post("/chat", json={"user_id": "cliente-123"})
+def test_chat_sin_clave_devuelve_401() -> None:
+    response = TestClient(app).post(
+        "/chat", json={"user_id": "cliente-123", "texto": "hola"}
+    )
+
+    assert response.status_code == 401
+    assert response.json() == {"detail": "Se requiere una X-API-Key válida para usar el chat."}
+
+
+def test_chat_sin_texto_devuelve_422(monkeypatch) -> None:
+    monkeypatch.setenv("API_KEY", "clave-de-prueba")
+    response = TestClient(app).post(
+        "/chat", json={"user_id": "cliente-123"}, headers={"X-API-Key": "clave-de-prueba"}
+    )
 
     assert response.status_code == 422
 
@@ -32,10 +46,12 @@ def test_chat_devuelve_502_si_falla_el_modelo(monkeypatch) -> None:
     def invoke(_: dict, config: dict) -> dict:
         raise RuntimeError("detalle interno")
 
+    monkeypatch.setenv("API_KEY", "clave-de-prueba")
     monkeypatch.setattr("api.app.router_graph.invoke", invoke)
     response = TestClient(app).post(
         "/chat",
         json={"user_id": "cliente-123", "texto": "hola"},
+        headers={"X-API-Key": "clave-de-prueba"},
     )
 
     assert response.status_code == 502
