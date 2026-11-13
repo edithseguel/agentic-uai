@@ -23,6 +23,17 @@ def cargar_grafo(nombre_agente: str) -> Any:
         ) from exc
 
 
+def mostrar_resultado(state: dict[str, Any]) -> None:
+    """Imprime únicamente los datos útiles para quien ejecuta el agente."""
+    print(
+        {
+            campo: state[campo]
+            for campo in ("ruta", "motivo", "respuesta")
+            if campo in state
+        }
+    )
+
+
 def main() -> None:
     load_dotenv()
     parser = argparse.ArgumentParser(description="Ejecuta un agente LangGraph.")
@@ -30,7 +41,9 @@ def main() -> None:
     parser.add_argument("mensaje", nargs="?", help="Mensaje de entrada del agente.")
     parser.add_argument("--saltos", action="store_true", help="Muestra los nodos recorridos.")
     parser.add_argument(
+        "--hilo",
         "--thread-id",
+        dest="thread_id",
         default="cli",
         help="Identificador del hilo para conservar la memoria del agente.",
     )
@@ -46,21 +59,29 @@ def main() -> None:
     if args.mensaje is None:
         parser.error("mensaje es obligatorio salvo que se use --diagrama")
 
-    entrada = {"mensaje": args.mensaje}
-    config = {"configurable": {"thread_id": args.thread_id}}
-    if args.saltos:
-        ultimo_estado: dict[str, Any] = entrada
-        for paso in graph.stream(entrada, config=config, stream_mode="updates"):
-            for nodo, actualizacion in paso.items():
-                print(f"Nodo: {nodo}")
-                if isinstance(actualizacion, dict):
-                    ultimo_estado.update(actualizacion)
-                    if nodo == "router" and "motivo" in actualizacion:
-                        print(f"Motivo: {actualizacion['motivo']}")
-        print(ultimo_estado)
-        return
+    inicializar = getattr(graph, "inicializar_memoria", None)
+    cerrar = getattr(graph, "cerrar_memoria", None)
+    if callable(inicializar):
+        inicializar()
+    try:
+        entrada = {"mensaje": args.mensaje}
+        config = {"configurable": {"thread_id": args.thread_id}}
+        if args.saltos:
+            ultimo_estado: dict[str, Any] = entrada
+            for paso in graph.stream(entrada, config=config, stream_mode="updates"):
+                for nodo, actualizacion in paso.items():
+                    print(f"Nodo: {nodo}")
+                    if isinstance(actualizacion, dict):
+                        ultimo_estado.update(actualizacion)
+                        if nodo == "router" and "motivo" in actualizacion:
+                            print(f"Motivo: {actualizacion['motivo']}")
+            mostrar_resultado(ultimo_estado)
+            return
 
-    print(graph.invoke(entrada, config=config))
+        mostrar_resultado(graph.invoke(entrada, config=config))
+    finally:
+        if callable(cerrar):
+            cerrar()
 
 
 if __name__ == "__main__":

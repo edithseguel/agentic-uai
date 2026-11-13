@@ -26,6 +26,7 @@ langchain-google-genai==4.4.3
 langchain-protocol==0.0.21
 langgraph==1.2.20
 langgraph-checkpoint==4.3.1
+langgraph-checkpoint-postgres==3.2.0
 langgraph-prebuilt==1.1.1
 langgraph-sdk==0.4.13
 langsmith==0.14.17
@@ -37,6 +38,9 @@ pluggy==1.7.0
 pyasn1==0.6.5
 pyasn1_modules==0.4.2
 pycparser==3.12
+psycopg==3.3.9
+psycopg-binary==3.3.9
+psycopg-pool==3.3.3
 pydantic==2.14.3
 pydantic_core==2.50.4
 Pygments==2.21.0

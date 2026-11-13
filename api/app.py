@@ -3,6 +3,7 @@
 import logging
 import os
 import secrets
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from dotenv import load_dotenv
@@ -12,11 +13,17 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.router.graph import graph as router_graph
+from src.router.graph import (
+    cerrar_memoria,
+    graph as router_graph,
+    inicializar_memoria,
+    tipo_memoria,
+)
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 MODELO = os.getenv("MODELO", "gemini-3.5-flash-lite")
+RESPUESTA_GIF = "¡Es el mejor gif del mundo!"
 api_key_header = APIKeyHeader(name="X-API-Key", scheme_name="APIKeyHeader", auto_error=False)
 
 tags_metadata = [
@@ -24,6 +31,15 @@ tags_metadata = [
     {"name": "chat", "description": "Enrutamiento de consultas de clientes."},
     {"name": "telegram", "description": "Webhook interno de Telegram."},
 ]
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Abre una única conexión de memoria persistente durante la vida de la API."""
+    inicializar_memoria()
+    yield
+    cerrar_memoria()
+
 
 app = FastAPI(
     title="Ecommerce Router API",
@@ -34,6 +50,7 @@ app = FastAPI(
         "postventa, pedidos o problemas posteriores; y generica, mensajes ajenos a la tienda."
     ),
     openapi_tags=tags_metadata,
+    lifespan=lifespan,
 )
 
 
@@ -44,6 +61,9 @@ class HealthResponse(BaseModel):
     modelo: str = Field(
         description="Nombre del modelo configurado mediante la variable MODELO.",
         examples=["gemini-3.5-flash-lite"],
+    )
+    memoria: Literal["ram", "postgres"] = Field(
+        description="Almacenamiento de checkpoints activo.", examples=["postgres"]
     )
 
 
@@ -106,10 +126,19 @@ def verificar_api_key(api_key: str | None = Security(api_key_header)) -> None:
         )
 
 
+def es_gif(message: dict[str, Any]) -> bool:
+    """Indica si el mensaje de Telegram contiene un GIF animado."""
+    if isinstance(message.get("animation"), dict):
+        return True
+
+    document = message.get("document")
+    return isinstance(document, dict) and document.get("mime_type") == "image/gif"
+
+
 @app.get("/health", response_model=HealthResponse, tags=["salud"], summary="Comprobar la API")
 def health() -> HealthResponse:
     """Devuelve el estado de la API y el modelo configurado."""
-    return HealthResponse(ok=True, modelo=MODELO)
+    return HealthResponse(ok=True, modelo=MODELO, memoria=tipo_memoria())
 
 
 @app.post(
@@ -161,13 +190,39 @@ async def telegram(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Webhook no autorizado.")
 
     message = update.get("message")
-    if not isinstance(message, dict) or not isinstance(message.get("text"), str):
+    if not isinstance(message, dict):
         return {"ok": True}
 
     chat = message.get("chat")
     chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if chat_id is None:
+        return {"ok": True}
+
+    if es_gif(message):
+        try:
+            token = os.getenv("TELEGRAM_TOKEN")
+            if not token:
+                raise RuntimeError("TELEGRAM_TOKEN no está configurado")
+
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": chat_id, "text": RESPUESTA_GIF},
+                )
+                if response.is_error:
+                    logger.error("Telegram sendMessage respondió con estado %s", response.status_code)
+            logger.info("Telegram: GIF recibido en chat %s", chat_id)
+        except httpx.HTTPError as error:
+            logger.error("Error HTTP enviando respuesta de GIF a Telegram: %s", type(error).__name__)
+        except Exception:
+            logger.exception("Error al procesar GIF de Telegram para chat %s", chat_id)
+        return {"ok": True}
+
+    if not isinstance(message.get("text"), str):
+        return {"ok": True}
+
     texto = message["text"].strip()
-    if chat_id is None or not texto:
+    if not texto:
         return {"ok": True}
 
     try:

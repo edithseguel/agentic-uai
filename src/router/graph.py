@@ -1,10 +1,12 @@
 """Grafo LangGraph que enruta mensajes de un ecommerce."""
 
+import logging
 import os
-from typing import Annotated, Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
@@ -15,11 +17,14 @@ from typing_extensions import TypedDict
 from src.router.prompts import (
     AGENTE_POSTVENTA_PROMPT,
     AGENTE_PREVENTA_PROMPT,
+    RESPUESTA_GENERICA_FALLBACK,
     RESPUESTA_GENERICA_PROMPT,
     ROUTER_PROMPT,
 )
 
 load_dotenv()
+logger = logging.getLogger(__name__)
+TIENDA_PATH = Path(__file__).resolve().parents[2] / "data" / "tienda.md"
 
 
 class Decision(BaseModel):
@@ -57,23 +62,56 @@ def router(state: RouterState) -> RouterState:
     return {
         "ruta": decision.ruta,
         "motivo": decision.motivo,
-        "messages": [HumanMessage(content=state["mensaje"])],
     }
 
 
 def agente_preventa(state: RouterState) -> RouterState:
     """Cascarón para futuras consultas de preventa."""
-    return {"respuesta": AGENTE_PREVENTA_PROMPT.format(mensaje=state["mensaje"])}
+    respuesta = AGENTE_PREVENTA_PROMPT.format(mensaje=state["mensaje"])
+    return {
+        "respuesta": respuesta,
+        "messages": [
+            HumanMessage(content=state["mensaje"]),
+            AIMessage(content=respuesta),
+        ],
+    }
 
 
 def agente_postventa(state: RouterState) -> RouterState:
     """Cascarón para futuras consultas de postventa."""
-    return {"respuesta": AGENTE_POSTVENTA_PROMPT.format(mensaje=state["mensaje"])}
+    respuesta = AGENTE_POSTVENTA_PROMPT.format(mensaje=state["mensaje"])
+    return {
+        "respuesta": respuesta,
+        "messages": [
+            HumanMessage(content=state["mensaje"]),
+            AIMessage(content=respuesta),
+        ],
+    }
 
 
-def respuesta_generica(_: RouterState) -> RouterState:
-    """Respuesta fija para mensajes fuera del contexto de la tienda."""
-    return {"respuesta": RESPUESTA_GENERICA_PROMPT}
+def respuesta_generica(state: RouterState) -> RouterState:
+    """Responde consultas generales con el contexto autorizado de la tienda."""
+    mensaje_usuario = HumanMessage(content=state["mensaje"])
+    try:
+        tienda = TIENDA_PATH.read_text(encoding="utf-8")
+        respuesta_modelo = crear_llm().invoke(
+            [
+                SystemMessage(content=RESPUESTA_GENERICA_PROMPT.format(tienda=tienda)),
+                *state.get("messages", []),
+                mensaje_usuario,
+            ]
+        )
+        respuesta = str(respuesta_modelo.content).strip()
+        if not respuesta:
+            raise ValueError("El modelo devolvió una respuesta vacía")
+    except Exception:
+        logger.exception("No fue posible generar la respuesta genérica; se usa respaldo.")
+        respuesta = RESPUESTA_GENERICA_FALLBACK
+
+    return {
+        "respuesta": respuesta,
+        "messages": [mensaje_usuario, AIMessage(content=respuesta)],
+    }
 
 
 def seleccionar_ruta(
@@ -88,15 +126,104 @@ def seleccionar_ruta(
     return rutas[state["ruta"]]  # type: ignore[return-value]
 
 
-builder = StateGraph(RouterState)
-builder.add_node("router", router)
-builder.add_node("agente_preventa", agente_preventa)
-builder.add_node("agente_postventa", agente_postventa)
-builder.add_node("respuesta_generica", respuesta_generica)
-builder.add_edge(START, "router")
-builder.add_conditional_edges("router", seleccionar_ruta)
-builder.add_edge("agente_preventa", END)
-builder.add_edge("agente_postventa", END)
-builder.add_edge("respuesta_generica", END)
+def crear_grafo(checkpointer: Any) -> Any:
+    """Compila el router con el almacenamiento de checkpoints indicado."""
+    builder = StateGraph(RouterState)
+    builder.add_node("router", router)
+    builder.add_node("agente_preventa", agente_preventa)
+    builder.add_node("agente_postventa", agente_postventa)
+    builder.add_node("respuesta_generica", respuesta_generica)
+    builder.add_edge(START, "router")
+    builder.add_conditional_edges("router", seleccionar_ruta)
+    builder.add_edge("agente_preventa", END)
+    builder.add_edge("agente_postventa", END)
+    builder.add_edge("respuesta_generica", END)
+    return builder.compile(checkpointer=checkpointer)
 
-graph = builder.compile(checkpointer=MemorySaver())
+
+class GrafoRouter:
+    """Fachada estable del grafo para poder cambiar su checkpointer al iniciar."""
+
+    def __init__(self) -> None:
+        self._graph = crear_grafo(MemorySaver())
+
+    def configurar(self, checkpointer: Any) -> None:
+        self._graph = crear_grafo(checkpointer)
+
+    def invoke(self, *args: Any, **kwargs: Any) -> Any:
+        return self._graph.invoke(*args, **kwargs)
+
+    def stream(self, *args: Any, **kwargs: Any) -> Any:
+        return self._graph.stream(*args, **kwargs)
+
+    def get_graph(self, *args: Any, **kwargs: Any) -> Any:
+        return self._graph.get_graph(*args, **kwargs)
+
+    def inicializar_memoria(self) -> Literal["ram", "postgres"]:
+        return inicializar_memoria()
+
+    def cerrar_memoria(self) -> None:
+        cerrar_memoria()
+
+
+graph = GrafoRouter()
+_pool: Any | None = None
+_tipo_memoria: Literal["ram", "postgres"] = "ram"
+
+
+def inicializar_memoria() -> Literal["ram", "postgres"]:
+    """Configura Postgres si está disponible; de lo contrario conserva memoria RAM."""
+    global _pool, _tipo_memoria
+    if _pool is not None:
+        return _tipo_memoria
+
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        logger.info("Memoria del router en RAM: DATABASE_URL no está configurada.")
+        return "ram"
+
+    try:
+        from langgraph.checkpoint.postgres import PostgresSaver
+        from psycopg_pool import ConnectionPool
+
+        pool = ConnectionPool(
+            conninfo=database_url,
+            min_size=1,
+            max_size=2,
+            timeout=5,
+            check=ConnectionPool.check_connection,
+            kwargs={"autocommit": True, "prepare_threshold": 0},
+            open=False,
+        )
+        pool.open(wait=True)
+        checkpointer = PostgresSaver(pool)
+        checkpointer.setup()
+        graph.configurar(checkpointer)
+        _pool = pool
+        _tipo_memoria = "postgres"
+        logger.info("Memoria del router conectada a PostgreSQL.")
+    except Exception as error:
+        logger.warning(
+            "Memoria del router en RAM: no fue posible conectar a PostgreSQL (%s).",
+            type(error).__name__,
+        )
+        try:
+            pool.close()  # type: ignore[name-defined]
+        except Exception:
+            pass
+    return _tipo_memoria
+
+
+def cerrar_memoria() -> None:
+    """Cierra el pool de PostgreSQL abierto por esta ejecución."""
+    global _pool, _tipo_memoria
+    if _pool is not None:
+        _pool.close()
+        _pool = None
+        _tipo_memoria = "ram"
+        graph.configurar(MemorySaver())
+
+
+def tipo_memoria() -> Literal["ram", "postgres"]:
+    """Devuelve el almacenamiento de checkpoints activo."""
+    return _tipo_memoria

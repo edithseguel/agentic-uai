@@ -82,6 +82,50 @@ def test_telegram_rechaza_un_secreto_invalido(monkeypatch) -> None:
     assert response.status_code == 403
 
 
+def test_telegram_responde_a_un_gif_sin_invocar_el_router(monkeypatch) -> None:
+    enviados: list[tuple[str, dict]] = []
+
+    def invoke(_: dict, config: dict) -> dict:
+        raise AssertionError("Un GIF no debe llegar al router")
+
+    class FakeResponse:
+        is_error = False
+
+    class FakeAsyncClient:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        async def post(self, url: str, json: dict) -> FakeResponse:
+            enviados.append((url, json))
+            return FakeResponse()
+
+    monkeypatch.setenv("TELEGRAM_SECRET", "secreto-de-prueba")
+    monkeypatch.setenv("TELEGRAM_TOKEN", "token-de-prueba")
+    monkeypatch.setattr("api.app.router_graph.invoke", invoke)
+    monkeypatch.setattr("api.app.httpx.AsyncClient", FakeAsyncClient)
+
+    response = TestClient(app).post(
+        "/telegram",
+        json={"message": {"chat": {"id": 9988}, "animation": {"file_id": "gif-1"}}},
+        headers={"X-Telegram-Bot-Api-Secret-Token": "secreto-de-prueba"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert enviados == [
+        (
+            "https://api.telegram.org/bottoken-de-prueba/sendMessage",
+            {"chat_id": 9988, "text": "¡Es el mejor gif del mundo!"},
+        )
+    ]
+
+
 def test_telegram_enruta_y_envia_respuesta(monkeypatch) -> None:
     enviados: list[tuple[str, dict]] = []
 

@@ -60,7 +60,7 @@ python main.py router "¿tienen la polera azul en talla M?" --saltos
 Para conservar conversación con un usuario específico:
 
 ```bash
-python main.py router "mi pedido 4521 llegó roto" --saltos --thread-id cliente-123
+python main.py router "mi pedido 4521 llegó roto" --saltos --hilo cliente-123
 ```
 
 Para imprimir el diagrama Mermaid sin invocar el modelo:
@@ -89,6 +89,20 @@ curl -X POST http://localhost:8000/chat \
 
 La colección de Bruno está en `bruno/`. Selecciona el entorno `local` o cambia
 la variable `baseUrl` para usar otro despliegue.
+
+## Memoria persistente
+
+Si defines `DATABASE_URL`, el router guarda sus checkpoints en PostgreSQL y
+conserva las conversaciones tras reinicios. Sin esa variable, o si PostgreSQL
+no está disponible al arrancar, usa memoria RAM como respaldo. `GET /health`
+expone el valor `memoria` (`postgres` o `ram`).
+
+Para inspeccionar los datos persistidos:
+
+```bash
+python scripts/ver_memoria.py
+python scripts/ver_memoria.py cliente-123
+```
 
 ## Pruebas
 
@@ -129,8 +143,10 @@ python -m pip freeze > requirements.txt
 
 ## Telegram
 
-El webhook verifica `X-Telegram-Bot-Api-Secret-Token`, ignora los updates sin
-texto y usa el `chat_id` como memoria del router. No se usa ninguna librería de
+El webhook verifica `X-Telegram-Bot-Api-Secret-Token`, responde
+`¡Es el mejor gif del mundo!` cuando recibe un GIF (incluidos los enviados como
+documento `image/gif`), e ignora los demás updates sin texto. Los mensajes de
+texto usan el `chat_id` como memoria del router. No se usa ninguna librería de
 bot: la respuesta se envía con `httpx` a `sendMessage`.
 
 1. Crea el bot con [@BotFather](https://t.me/BotFather), ejecutando `/newbot`.
@@ -203,4 +219,5 @@ Usa la URL HTTPS resultante como `PUBLIC_URL` en tu `.env` y ejecuta
 | `TELEGRAM_TOKEN` | Token de BotFather usado para enviar respuestas con `sendMessage`. |
 | `TELEGRAM_SECRET` | Secreto que Telegram envía en cada webhook para validarlo. |
 | `PUBLIC_URL` | URL HTTPS pública para registrar el webhook. |
+| `DATABASE_URL` | URL de PostgreSQL para los checkpoints persistentes del router. |
 # agentic-uai

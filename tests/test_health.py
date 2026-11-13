@@ -7,4 +7,4 @@ def test_health() -> None:
     response = TestClient(app).get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "modelo": MODELO}
+    assert response.json() == {"ok": True, "modelo": MODELO, "memoria": "ram"}
