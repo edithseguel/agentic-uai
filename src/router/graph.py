@@ -52,6 +52,24 @@ def crear_llm() -> ChatGoogleGenerativeAI:
     return ChatGoogleGenerativeAI(model=modelo)
 
 
+def extraer_texto_respuesta(contenido: Any) -> str:
+    """Extrae texto de las respuestas por bloques que devuelve Gemini."""
+    if isinstance(contenido, str):
+        return contenido.strip()
+
+    if isinstance(contenido, list):
+        textos = [
+            bloque["text"]
+            for bloque in contenido
+            if isinstance(bloque, dict)
+            and bloque.get("type") == "text"
+            and isinstance(bloque.get("text"), str)
+        ]
+        return "\n".join(textos).strip()
+
+    return ""
+
+
 def router(state: RouterState) -> RouterState:
     """Clasifica el mensaje y guarda la decisión estructurada."""
     llm = crear_llm().with_structured_output(Decision)
@@ -101,7 +119,7 @@ def respuesta_generica(state: RouterState) -> RouterState:
                 mensaje_usuario,
             ]
         )
-        respuesta = str(respuesta_modelo.content).strip()
+        respuesta = extraer_texto_respuesta(respuesta_modelo.content)
         if not respuesta:
             raise ValueError("El modelo devolvió una respuesta vacía")
     except Exception:
