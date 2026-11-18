@@ -8,6 +8,7 @@ from typing import Annotated, Any, Literal
 from dotenv import load_dotenv
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.agents import create_agent
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -21,6 +22,8 @@ from src.router.prompts import (
     RESPUESTA_GENERICA_PROMPT,
     ROUTER_PROMPT,
 )
+from src.router.reclamos import inicializar_reclamos
+from src.router.tools import POSTVENTA_TOOLS, PREVENTA_TOOLS
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -73,50 +76,77 @@ def extraer_texto_respuesta(contenido: Any) -> str:
 def router(state: RouterState) -> RouterState:
     """Clasifica el mensaje y guarda la decisión estructurada."""
     llm = crear_llm().with_structured_output(Decision)
-    decision = llm.invoke([
-        ("system", ROUTER_PROMPT),
-        ("human", state["mensaje"]),
-    ])
+    ruta_anterior = state.get("ruta", "sin ruta anterior")
+    decision = llm.invoke(
+        [
+            SystemMessage(
+                content=ROUTER_PROMPT.format(ruta_anterior=ruta_anterior)
+            ),
+            *state.get("messages", [])[-4:],
+            HumanMessage(content=state["mensaje"]),
+        ]
+    )
     return {
         "ruta": decision.ruta,
         "motivo": decision.motivo,
+        "messages": [HumanMessage(content=state["mensaje"])],
     }
 
 
-def agente_preventa(state: RouterState) -> RouterState:
-    """Cascarón para futuras consultas de preventa."""
-    respuesta = AGENTE_PREVENTA_PROMPT.format(mensaje=state["mensaje"])
+def crear_agente_preventa() -> Any:
+    """Crea el agente ReAct que puede consultar el catálogo de la tienda."""
+    return create_agent(
+        model=crear_llm(),
+        tools=PREVENTA_TOOLS,
+        system_prompt=AGENTE_PREVENTA_PROMPT,
+        name="agente_preventa",
+    )
+
+
+def finalizar_preventa(state: RouterState) -> RouterState:
+    """Expone la última respuesta del agente ReAct en el estado público."""
+    respuesta = ""
+    for mensaje in reversed(state.get("messages", [])):
+        if isinstance(mensaje, AIMessage):
+            respuesta = extraer_texto_respuesta(mensaje.content)
+            if respuesta:
+                break
     return {
         "respuesta": respuesta,
-        "messages": [
-            HumanMessage(content=state["mensaje"]),
-            AIMessage(content=respuesta),
-        ],
     }
 
 
-def agente_postventa(state: RouterState) -> RouterState:
-    """Cascarón para futuras consultas de postventa."""
-    respuesta = AGENTE_POSTVENTA_PROMPT.format(mensaje=state["mensaje"])
+def crear_agente_postventa() -> Any:
+    """Crea el agente ReAct para pedidos, políticas y reclamos."""
+    return create_agent(
+        model=crear_llm(),
+        tools=POSTVENTA_TOOLS,
+        system_prompt=AGENTE_POSTVENTA_PROMPT,
+        name="agente_postventa",
+    )
+
+
+def finalizar_postventa(state: RouterState) -> RouterState:
+    """Expone la última respuesta del agente ReAct en el estado público."""
+    respuesta = ""
+    for mensaje in reversed(state.get("messages", [])):
+        if isinstance(mensaje, AIMessage):
+            respuesta = extraer_texto_respuesta(mensaje.content)
+            if respuesta:
+                break
     return {
         "respuesta": respuesta,
-        "messages": [
-            HumanMessage(content=state["mensaje"]),
-            AIMessage(content=respuesta),
-        ],
     }
 
 
 def respuesta_generica(state: RouterState) -> RouterState:
     """Responde consultas generales con el contexto autorizado de la tienda."""
-    mensaje_usuario = HumanMessage(content=state["mensaje"])
     try:
         tienda = TIENDA_PATH.read_text(encoding="utf-8")
         respuesta_modelo = crear_llm().invoke(
             [
                 SystemMessage(content=RESPUESTA_GENERICA_PROMPT.format(tienda=tienda)),
                 *state.get("messages", []),
-                mensaje_usuario,
             ]
         )
         respuesta = extraer_texto_respuesta(respuesta_modelo.content)
@@ -128,7 +158,7 @@ def respuesta_generica(state: RouterState) -> RouterState:
 
     return {
         "respuesta": respuesta,
-        "messages": [mensaje_usuario, AIMessage(content=respuesta)],
+        "messages": [AIMessage(content=respuesta)],
     }
 
 
@@ -148,13 +178,17 @@ def crear_grafo(checkpointer: Any) -> Any:
     """Compila el router con el almacenamiento de checkpoints indicado."""
     builder = StateGraph(RouterState)
     builder.add_node("router", router)
-    builder.add_node("agente_preventa", agente_preventa)
-    builder.add_node("agente_postventa", agente_postventa)
+    builder.add_node("agente_preventa", crear_agente_preventa())
+    builder.add_node("finalizar_preventa", finalizar_preventa)
+    builder.add_node("agente_postventa", crear_agente_postventa())
+    builder.add_node("finalizar_postventa", finalizar_postventa)
     builder.add_node("respuesta_generica", respuesta_generica)
     builder.add_edge(START, "router")
     builder.add_conditional_edges("router", seleccionar_ruta)
-    builder.add_edge("agente_preventa", END)
-    builder.add_edge("agente_postventa", END)
+    builder.add_edge("agente_preventa", "finalizar_preventa")
+    builder.add_edge("finalizar_preventa", END)
+    builder.add_edge("agente_postventa", "finalizar_postventa")
+    builder.add_edge("finalizar_postventa", END)
     builder.add_edge("respuesta_generica", END)
     return builder.compile(checkpointer=checkpointer)
 
@@ -172,9 +206,13 @@ class GrafoRouter:
         return self._graph.invoke(*args, **kwargs)
 
     def stream(self, *args: Any, **kwargs: Any) -> Any:
+        """Incluye los eventos de subgrafos para mostrar herramientas en --saltos."""
+        kwargs.setdefault("subgraphs", True)
         return self._graph.stream(*args, **kwargs)
 
     def get_graph(self, *args: Any, **kwargs: Any) -> Any:
+        """Expande subgrafos en el diagrama para incluir el agente de preventa."""
+        kwargs.setdefault("xray", True)
         return self._graph.get_graph(*args, **kwargs)
 
     def inicializar_memoria(self) -> Literal["ram", "postgres"]:
@@ -190,8 +228,9 @@ _tipo_memoria: Literal["ram", "postgres"] = "ram"
 
 
 def inicializar_memoria() -> Literal["ram", "postgres"]:
-    """Configura Postgres si está disponible; de lo contrario conserva memoria RAM."""
+    """Configura checkpoints y reclamos en Postgres, con respaldo de memoria RAM."""
     global _pool, _tipo_memoria
+    inicializar_reclamos()
     if _pool is not None:
         return _tipo_memoria
 

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#075e54">
+    <title>Chat TecnoSur</title>
+    <link rel="stylesheet" href="/static/styles.css?v=3">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <header class="sidebar-header">
+          <a class="brand" href="/" aria-label="TecnoSur, inicio">
+            <span class="brand-mark" aria-hidden="true">T</span>
+            <span><strong>TecnoSur</strong><small>Atención en línea</small></span>
+          </a>
+          <button class="icon-button" id="settings-button" type="button" aria-label="Configurar clave API" title="Configurar clave API">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8 4.7v-2.4l-2-.7a6.3 6.3 0 0 0-.6-1.4l.9-1.9-1.7-1.7-1.9.9a6.3 6.3 0 0 0-1.4-.6l-.7-2h-2.4l-.7 2a6.3 6.3 0 0 0-1.4.6l-1.9-.9-1.7 1.7.9 1.9a6.3 6.3 0 0 0-.6 1.4l-2 .7v2.4l2 .7a6.3 6.3 0 0 0 .6 1.4l-.9 1.9 1.7 1.7 1.9-.9a6.3 6.3 0 0 0 1.4.6l.7 2h2.4l.7-2a6.3 6.3 0 0 0 1.4-.6l1.9.9 1.7-1.7-.9-1.9a6.3 6.3 0 0 0 .6-1.4l2-.7Z"/></svg>
+          </button>
+        </header>
+        <section class="sidebar-content">
+          <div class="section-label">TU TIENDA</div>
+          <div class="store-card">
+            <div class="store-icon" aria-hidden="true">✦</div>
+            <div><strong>Asistente de TecnoSur</strong><span>Productos, pedidos y ayuda</span></div>
+            <span class="online-dot" title="En línea"></span>
+          </div>
+          <div class="section-label capabilities-title">PUEDO AYUDARTE CON</div>
+          <div class="capability"><span class="capability-icon">▦</span><span>Productos y compras</span></div>
+          <div class="capability"><span class="capability-icon">↗</span><span>Pedidos y seguimiento</span></div>
+          <div class="capability"><span class="capability-icon">♡</span><span>Cambios y devoluciones</span></div>
+          <div class="trace-info">
+            <span class="trace-info-icon" aria-hidden="true">⌁</span>
+            <p>En cada respuesta puedes revisar el recorrido de tu agente: clasificación, especialista y herramientas consultadas.</p>
+          </div>
+        </section>
+        <footer class="sidebar-footer">
+          <span class="secure-mark" aria-hidden="true">●</span>
+          <span>API local</span>
+          <span class="api-status" id="api-status">Conectando…</span>
+        </footer>
+      </aside>
+
+      <section class="chat-panel" aria-label="Conversación con TecnoSur">
+        <header class="chat-header">
+          <div class="avatar" aria-hidden="true">T</div>
+          <div class="chat-identity"><strong>Asistente TecnoSur</strong><span><i class="online-dot"></i> En línea</span></div>
+          <div class="header-badge"><span aria-hidden="true">⌁</span> Traza del agente</div>
+        </header>
+
+        <div class="messages" id="messages" aria-live="polite">
+          <div class="date-divider"><span>HOY</span></div>
+          <article class="welcome-card">
+            <div class="welcome-sparkle" aria-hidden="true">✦</div>
+            <strong>¡Hola! 👋</strong>
+            <p>Soy el asistente de TecnoSur. Pregúntame por productos, compras o un pedido y te ayudaré.</p>
+            <div class="suggestions">
+              <button type="button" class="suggestion">¿Qué celulares tienen?</button>
+              <button type="button" class="suggestion">Quiero revisar mi pedido</button>
+            </div>
+          </article>
+        </div>
+
+        <form class="composer" id="chat-form">
+          <label class="sr-only" for="message-input">Escribe tu mensaje</label>
+          <input id="message-input" name="texto" type="text" placeholder="Escribe un mensaje…" autocomplete="off" maxlength="4000" required>
+          <button class="send-button" id="send-button" type="submit" aria-label="Enviar mensaje" title="Enviar mensaje">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3.4 20.3 18-8.3-18-8.3-.1 6.5 12.9 1.8-12.9 1.8.1 6.5Z"/></svg>
+          </button>
+        </form>
+        <p class="composer-note">TecnoSur · Tu conversación se recuerda en esta sesión</p>
+      </section>
+    </main>
+
+    <dialog class="settings-dialog" id="settings-dialog">
+      <form method="dialog" class="dialog-close-form"><button class="dialog-close" aria-label="Cerrar">×</button></form>
+      <div class="dialog-icon" aria-hidden="true">⌑</div>
+      <h1>Conecta con tu asistente</h1>
+      <p>Ingresa la clave API configurada en el servidor para habilitar el chat. La clave se guarda solo en esta pestaña y se envía al servidor local.</p>
+      <form id="settings-form">
+        <label for="api-key-input">Clave API</label>
+        <input id="api-key-input" type="password" placeholder="Tu X-API-Key" autocomplete="off" required>
+        <div class="dialog-actions">
+          <button class="secondary-button" id="cancel-settings" type="button">Ahora no</button>
+          <button class="primary-button" type="submit">Guardar clave</button>
+        </div>
+        <p class="dialog-error" id="settings-error" role="alert"></p>
+      </form>
+    </dialog>
+    <script src="/static/app.js?v=2" defer></script>
+  </body>
+</html>

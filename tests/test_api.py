@@ -4,16 +4,37 @@ from api.app import app
 
 
 def test_chat_con_clave_valida_retorna_la_decision_del_router(monkeypatch) -> None:
-    def invoke(_: dict, config: dict) -> dict:
+    class ToolResult:
+        type = "tool"
+        name = "buscar_catalogo"
+
+    class SecondToolResult:
+        type = "tool"
+        name = "obtener_detalle"
+
+    def stream(_: dict, config: dict, stream_mode: str):
         assert config["configurable"]["thread_id"] == "cliente-123"
-        return {
-            "ruta": "preventa",
-            "motivo": "Consulta por una talla antes de comprar.",
-            "respuesta": "Soy el agente de preventa.",
+        assert stream_mode == "updates"
+        yield {
+            "router": {
+                "ruta": "preventa",
+                "motivo": "Consulta por una talla antes de comprar.",
+            }
+        }
+        yield (("agente_preventa:abc",), {"model": {}})
+        yield (
+            ("agente_preventa:abc",),
+            {"tools": {"messages": [ToolResult(), SecondToolResult()]}},
+        )
+        yield {
+            "agente_preventa": {
+                "respuesta": "Soy el agente de preventa.",
+                "messages": [],
+            }
         }
 
     monkeypatch.setenv("API_KEY", "clave-de-prueba")
-    monkeypatch.setattr("api.app.router_graph.invoke", invoke)
+    monkeypatch.setattr("api.app.router_graph.stream", stream)
     response = TestClient(app).post(
         "/chat",
         json={"user_id": "cliente-123", "texto": "¿Tienen talla M?"},
@@ -22,6 +43,28 @@ def test_chat_con_clave_valida_retorna_la_decision_del_router(monkeypatch) -> No
 
     assert response.status_code == 200
     assert response.json()["ruta"] == "preventa"
+    assert response.json()["pasos"] == [
+        {
+            "nodo": "router",
+            "detalle": "Clasificó el mensaje: Consulta por una talla antes de comprar.",
+        },
+        {"nodo": "agente_preventa", "detalle": "Agente de preventa"},
+        {"nodo": "herramienta", "detalle": "Buscar catalogo"},
+        {"nodo": "herramienta", "detalle": "Obtener detalle"},
+    ]
+
+
+def test_interfaz_web_y_recursos_estan_disponibles() -> None:
+    client = TestClient(app)
+
+    interfaz = client.get("/")
+    estilos = client.get("/static/styles.css")
+    script = client.get("/static/app.js")
+
+    assert interfaz.status_code == 200
+    assert "Chat TecnoSur" in interfaz.text
+    assert estilos.status_code == 200
+    assert script.status_code == 200
 
 
 def test_chat_sin_clave_devuelve_401() -> None:
@@ -43,11 +86,12 @@ def test_chat_sin_texto_devuelve_422(monkeypatch) -> None:
 
 
 def test_chat_devuelve_502_si_falla_el_modelo(monkeypatch) -> None:
-    def invoke(_: dict, config: dict) -> dict:
+    def stream(_: dict, config: dict, stream_mode: str):
         raise RuntimeError("detalle interno")
+        yield
 
     monkeypatch.setenv("API_KEY", "clave-de-prueba")
-    monkeypatch.setattr("api.app.router_graph.invoke", invoke)
+    monkeypatch.setattr("api.app.router_graph.stream", stream)
     response = TestClient(app).post(
         "/chat",
         json={"user_id": "cliente-123", "texto": "hola"},

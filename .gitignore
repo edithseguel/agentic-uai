@@ -9,6 +9,8 @@ __pycache__/
 .DS_Store
 data/*
 !data/tienda.md
+!data/pedidos.json
+!data/politicas.md
 local_data/
 *.db
 *.sqlite

@@ -13,6 +13,8 @@ def cargar_grafo(nombre_agente: str) -> Any:
     try:
         modulo = importlib.import_module(f"src.{nombre_agente}.graph")
     except ModuleNotFoundError as exc:
+        if exc.name != f"src.{nombre_agente}.graph":
+            raise
         raise SystemExit(f"No se encontró el agente '{nombre_agente}'.") from exc
 
     try:
@@ -68,9 +70,33 @@ def main() -> None:
         config = {"configurable": {"thread_id": args.thread_id}}
         if args.saltos:
             ultimo_estado: dict[str, Any] = entrada
-            for paso in graph.stream(entrada, config=config, stream_mode="updates"):
+            subgrafos_anunciados: set[str] = set()
+            for evento in graph.stream(entrada, config=config, stream_mode="updates"):
+                namespace: tuple[str, ...] = ()
+                paso = evento
+                if (
+                    isinstance(evento, tuple)
+                    and len(evento) == 2
+                    and isinstance(evento[0], tuple)
+                ):
+                    namespace, paso = evento
+                if not isinstance(paso, dict):
+                    continue
                 for nodo, actualizacion in paso.items():
-                    print(f"Nodo: {nodo}")
+                    if namespace:
+                        subgrafo = namespace[0].split(":", maxsplit=1)[0]
+                        if nodo == "model" and subgrafo not in subgrafos_anunciados:
+                            print(f"Nodo: {subgrafo}")
+                            subgrafos_anunciados.add(subgrafo)
+                        if nodo == "tools" and isinstance(actualizacion, dict):
+                            for mensaje in actualizacion.get("messages", []):
+                                if getattr(mensaje, "type", "") == "tool":
+                                    sufijo = " (A2A)" if mensaje.name == "consultar_redes" else ""
+                                    print(f"Herramienta: {mensaje.name}{sufijo}")
+                        continue
+
+                    if nodo not in subgrafos_anunciados:
+                        print(f"Nodo: {nodo}")
                     if isinstance(actualizacion, dict):
                         ultimo_estado.update(actualizacion)
                         if nodo == "router" and "motivo" in actualizacion:

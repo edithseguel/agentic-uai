@@ -78,6 +78,15 @@ uvicorn api.app:app --reload --port 8000
 
 Abre Swagger en [http://localhost:8000/docs](http://localhost:8000/docs).
 
+## Interfaz visual del chat
+
+Con la API en marcha, abre [http://localhost:8000/](http://localhost:8000/)
+para usar el chat en una interfaz web adaptable a móviles, estilo WhatsApp.
+Pulsa el engranaje e introduce el valor local de `API_KEY` configurado en `.env`.
+La clave se guarda únicamente en la sesión de esa pestaña. Cada respuesta incluye
+el recorrido del agente, con su clasificación, el agente seleccionado y las
+herramientas que haya consultado.
+
 Ejemplo para `/chat`:
 
 ```bash

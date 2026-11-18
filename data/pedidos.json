@@ -1,0 +1,74 @@
+[
+  {
+    "numero": "PED-1001",
+    "nombre_cliente": "Camila Rojas",
+    "productos": ["Smart TV Samsung 55 pulgadas"],
+    "fecha_compra": "2026-10-28",
+    "estado": "preparando",
+    "fecha_estimada_entrega": "2026-11-18",
+    "codigo_seguimiento": "CHL-8F21A"
+  },
+  {
+    "numero": "PED-1002",
+    "nombre_cliente": "Diego Pérez",
+    "productos": ["Celular Xiaomi Redmi Note 14"],
+    "fecha_compra": "2026-10-30",
+    "estado": "despachado",
+    "fecha_estimada_entrega": "2026-11-16",
+    "codigo_seguimiento": "CHL-7K34B"
+  },
+  {
+    "numero": "PED-1003",
+    "nombre_cliente": "Valentina Soto",
+    "productos": ["Televisor LG OLED 48 pulgadas"],
+    "fecha_compra": "2026-10-19",
+    "estado": "entregado",
+    "fecha_estimada_entrega": "2026-10-23",
+    "codigo_seguimiento": "CHL-2M98C"
+  },
+  {
+    "numero": "PED-1004",
+    "nombre_cliente": "Martín Fuentes",
+    "productos": ["iPhone 16 128 GB"],
+    "fecha_compra": "2026-10-14",
+    "estado": "devuelto",
+    "fecha_estimada_entrega": "2026-10-18",
+    "codigo_seguimiento": "CHL-5P67D"
+  },
+  {
+    "numero": "PED-1005",
+    "nombre_cliente": "Antonia Silva",
+    "productos": ["Smart TV TCL 65 pulgadas", "Soporte mural para TV"],
+    "fecha_compra": "2026-11-02",
+    "estado": "despachado",
+    "fecha_estimada_entrega": "2026-11-17",
+    "codigo_seguimiento": "CHL-9R12E"
+  },
+  {
+    "numero": "PED-1006",
+    "nombre_cliente": "Javier Morales",
+    "productos": ["Samsung Galaxy A56"],
+    "fecha_compra": "2026-11-05",
+    "estado": "preparando",
+    "fecha_estimada_entrega": "2026-11-20",
+    "codigo_seguimiento": "CHL-3T45F"
+  },
+  {
+    "numero": "PED-1007",
+    "nombre_cliente": "Paula Castro",
+    "productos": ["Televisor Sony LED 50 pulgadas"],
+    "fecha_compra": "2026-10-22",
+    "estado": "entregado",
+    "fecha_estimada_entrega": "2026-10-27",
+    "codigo_seguimiento": "CHL-6V89G"
+  },
+  {
+    "numero": "PED-1008",
+    "nombre_cliente": "Ricardo Torres",
+    "productos": ["Motorola Edge 50 Neo"],
+    "fecha_compra": "2026-11-01",
+    "estado": "despachado",
+    "fecha_estimada_entrega": "2026-11-15",
+    "codigo_seguimiento": "CHL-1X23H"
+  }
+]
