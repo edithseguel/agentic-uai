@@ -10,6 +10,7 @@ from langchain_core.runnables.config import var_child_runnable_config
 
 from src.router.catalogo import consultar_catalogo
 from src.router.a2a_redes import preguntar_redes
+from src.router.mcp_shopify import herramientas_preventa_shopify
 from src.router.reclamos import crear_reclamo as guardar_reclamo
 
 VISTA_PRODUCTOS = "catalogo.productos_unicos"
@@ -124,12 +125,15 @@ def consultar_redes(tema: str) -> str:
         return "el agente de redes no está disponible"
 
 
-PREVENTA_TOOLS = [
-    buscar_productos,
-    ver_producto,
-    mejores_ofertas,
-    consultar_redes,
-]
+def herramientas_preventa() -> list[Any]:
+    """Combina herramientas locales y las Shopify autorizadas ya cargadas."""
+    return [
+        buscar_productos,
+        ver_producto,
+        mejores_ofertas,
+        consultar_redes,
+        *herramientas_preventa_shopify(),
+    ]
 
 
 @tool

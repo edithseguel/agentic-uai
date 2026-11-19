@@ -23,7 +23,7 @@ from src.router.prompts import (
     ROUTER_PROMPT,
 )
 from src.router.reclamos import inicializar_reclamos
-from src.router.tools import POSTVENTA_TOOLS, PREVENTA_TOOLS
+from src.router.tools import POSTVENTA_TOOLS, herramientas_preventa
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -73,6 +73,17 @@ def extraer_texto_respuesta(contenido: Any) -> str:
     return ""
 
 
+def historial_conversacional(messages: list[Any], limite: int | None = None) -> list[Any]:
+    """Excluye llamadas y respuestas de herramientas del contexto de modelos sin tools."""
+    historial = [
+        mensaje
+        for mensaje in messages
+        if isinstance(mensaje, HumanMessage)
+        or (isinstance(mensaje, AIMessage) and not mensaje.tool_calls)
+    ]
+    return historial[-limite:] if limite is not None else historial
+
+
 def router(state: RouterState) -> RouterState:
     """Clasifica el mensaje y guarda la decisión estructurada."""
     llm = crear_llm().with_structured_output(Decision)
@@ -82,7 +93,7 @@ def router(state: RouterState) -> RouterState:
             SystemMessage(
                 content=ROUTER_PROMPT.format(ruta_anterior=ruta_anterior)
             ),
-            *state.get("messages", [])[-4:],
+            *historial_conversacional(state.get("messages", []), limite=4),
             HumanMessage(content=state["mensaje"]),
         ]
     )
@@ -97,7 +108,7 @@ def crear_agente_preventa() -> Any:
     """Crea el agente ReAct que puede consultar el catálogo de la tienda."""
     return create_agent(
         model=crear_llm(),
-        tools=PREVENTA_TOOLS,
+        tools=herramientas_preventa(),
         system_prompt=AGENTE_PREVENTA_PROMPT,
         name="agente_preventa",
     )
@@ -146,7 +157,7 @@ def respuesta_generica(state: RouterState) -> RouterState:
         respuesta_modelo = crear_llm().invoke(
             [
                 SystemMessage(content=RESPUESTA_GENERICA_PROMPT.format(tienda=tienda)),
-                *state.get("messages", []),
+                *historial_conversacional(state.get("messages", [])),
             ]
         )
         respuesta = extraer_texto_respuesta(respuesta_modelo.content)
@@ -237,6 +248,7 @@ def inicializar_memoria() -> Literal["ram", "postgres"]:
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
         logger.info("Memoria del router en RAM: DATABASE_URL no está configurada.")
+        graph.configurar(MemorySaver())
         return "ram"
 
     try:
@@ -268,6 +280,7 @@ def inicializar_memoria() -> Literal["ram", "postgres"]:
             pool.close()  # type: ignore[name-defined]
         except Exception:
             pass
+        graph.configurar(MemorySaver())
     return _tipo_memoria
 
 

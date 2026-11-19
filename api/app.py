@@ -22,6 +22,7 @@ from src.router.graph import (
     inicializar_memoria,
     tipo_memoria,
 )
+from src.router.mcp_shopify import inicializar_mcp_shopify
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ tags_metadata = [
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Abre una única conexión de memoria persistente durante la vida de la API."""
+    await inicializar_mcp_shopify()
     inicializar_memoria()
     yield
     cerrar_memoria()
